@@ -44,7 +44,8 @@ class Food101DataLoader:
         print(f"📊 Imágenes de prueba: {sum(len(v) for v in self.test_data.values())}")
     
     def create_datasets(self, validation_split=0.2):
-        """Crea datasets de TensorFlow para entrenamiento, validación y prueba"""
+        """
+        Crea datasets de TensorFlow para entrenamiento, validación y prueba
         
         Args:
             validation_split: Proporción de datos de entrenamiento para validación
