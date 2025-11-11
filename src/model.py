@@ -1,53 +1,86 @@
 """
-Definición del modelo EfficientNetV2 para clasificación de alimentos
+Módulo para crear y configurar el modelo EfficientNet - OPTIMIZADO
 """
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.regularizers import l2
 
 def create_efficientnet_model(num_classes=101, img_size=224, trainable_layers=20):
     """
-    Crea un modelo EfficientNetV2 con Transfer Learning
+    Crea un modelo basado en EfficientNetV2 con regularización mejorada
     
     Args:
-        num_classes: Número de clases (101 para Food-101)
+        num_classes: Número de clases de alimentos
         img_size: Tamaño de entrada de la imagen
-        trainable_layers: Número de capas superiores a entrenar
+        trainable_layers: Número de capas a entrenar (desde el final)
     
     Returns:
-        modelo de Keras
+        model, base_model
     """
-    # Cargar modelo base preentrenado
+    # Cargar modelo base pre-entrenado
     base_model = keras.applications.EfficientNetV2B0(
         include_top=False,
         weights='imagenet',
         input_shape=(img_size, img_size, 3)
     )
     
-    # Congelar capas base inicialmente
+    # Congelar todas las capas inicialmente
     base_model.trainable = False
     
-    # Crear el modelo completo
+    # Construcción del modelo con REGULARIZACIÓN MEJORADA
     inputs = keras.Input(shape=(img_size, img_size, 3))
     
-    # Augmentation layer (opcional, para mayor robustez)
-    x = layers.RandomFlip("horizontal")(inputs)
-    x = layers.RandomRotation(0.1)(x)
-    x = layers.RandomZoom(0.1)(x)
+    # Base model
+    x = base_model(inputs, training=False)
     
-    # Pasar por el modelo base
-    x = base_model(x, training=False)
-    
-    # Agregar capas de clasificación
+    # Global pooling
     x = layers.GlobalAveragePooling2D()(x)
-    x = layers.Dropout(0.3)(x)
-    x = layers.Dense(512, activation='relu')(x)
-    x = layers.Dropout(0.2)(x)
-    outputs = layers.Dense(num_classes, activation='softmax')(x)
     
-    model = keras.Model(inputs, outputs)
+    # Dropout más agresivo
+    x = layers.Dropout(0.5)(x)
+    
+    # Dense layer con L2 regularization
+    x = layers.Dense(
+        512, 
+        activation='relu',
+        kernel_regularizer=l2(0.01),
+        name='dense_512'
+    )(x)
+    
+    # Batch Normalization para estabilidad
+    x = layers.BatchNormalization()(x)
+    
+    # Segundo dropout
+    x = layers.Dropout(0.4)(x)
+    
+    # Dense layer adicional
+    x = layers.Dense(
+        256,
+        activation='relu',
+        kernel_regularizer=l2(0.01),
+        name='dense_256'
+    )(x)
+    
+    # Batch Normalization
+    x = layers.BatchNormalization()(x)
+    
+    # Dropout final
+    x = layers.Dropout(0.3)(x)
+    
+    # Capa de salida
+    outputs = layers.Dense(
+        num_classes,
+        activation='softmax',
+        kernel_regularizer=l2(0.005),
+        name='predictions'
+    )(x)
+    
+    # Crear modelo
+    model = keras.Model(inputs, outputs, name='EfficientNetV2_FoodRecognition')
     
     return model, base_model
+
 
 def unfreeze_model(base_model, trainable_layers=20):
     """
@@ -55,15 +88,18 @@ def unfreeze_model(base_model, trainable_layers=20):
     
     Args:
         base_model: Modelo base de EfficientNet
-        trainable_layers: Número de capas a descongelar
+        trainable_layers: Número de capas a descongelar desde el final
     """
     base_model.trainable = True
     
-    # Congelar todas las capas excepto las últimas
+    # Congelar todas menos las últimas N capas
     for layer in base_model.layers[:-trainable_layers]:
         layer.trainable = False
     
-    print(f"✅ Fine-tuning activado: {trainable_layers} capas entrenables")
+    print(f"✅ Descongeladas las últimas {trainable_layers} capas del modelo base")
+    print(f"📊 Capas entrenables: {sum([1 for layer in base_model.layers if layer.trainable])}")
+    print(f"📊 Capas congeladas: {sum([1 for layer in base_model.layers if not layer.trainable])}")
+
 
 def load_trained_model(model_path):
     """
@@ -79,20 +115,19 @@ def load_trained_model(model_path):
     print(f"✅ Modelo cargado desde: {model_path}")
     return model
 
+
 def get_model_summary(model):
-    """
-    Muestra un resumen del modelo
-    """
+    """Muestra un resumen del modelo"""
     print("\n" + "="*70)
-    print("ARQUITECTURA DEL MODELO")
+    print("📋 RESUMEN DEL MODELO")
     print("="*70)
     model.summary()
-    print("="*70)
     
-    # Contar parámetros entrenables
+    # Contar parámetros
     trainable_params = sum([tf.size(w).numpy() for w in model.trainable_weights])
     non_trainable_params = sum([tf.size(w).numpy() for w in model.non_trainable_weights])
     
     print(f"\n📊 Parámetros entrenables: {trainable_params:,}")
     print(f"📊 Parámetros no entrenables: {non_trainable_params:,}")
-    print(f"📊 Total de parámetros: {trainable_params + non_trainable_params:,}\n")
+    print(f"📊 Total de parámetros: {trainable_params + non_trainable_params:,}")
+    print("="*70 + "\n")
